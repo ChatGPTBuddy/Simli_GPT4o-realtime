@@ -98,12 +98,7 @@ export function ConsolePage(): JSX.Element {
     const pc = (simliClientRef.current as any).pc as RTCPeerConnection | null;
     const dc = (simliClientRef.current as any).dc as RTCDataChannel | null;
   
-    return (
-      pc !== null &&
-      pc.iceConnectionState === 'connected' &&
-      dc !== null &&
-      dc.readyState === 'open'
-    );
+    return pc !== null && pc.iceConnectionState === 'connected' && dc !== null && dc.readyState === 'open';
   }, []);
   
   const connectConversation = useCallback(async () => {
@@ -127,7 +122,7 @@ export function ConsolePage(): JSX.Element {
     await wavStreamPlayerRef.current.connect();
     
     if (client.getTurnDetectionType() === 'server_vad') {
-      await wavRecorder.record((data) => client.appendInputAudio(data.mono));
+      await wavRecorder.record((data: { mono: any }) => client.appendInputAudio(data.mono));
     }
   }, []);
   
@@ -182,7 +177,7 @@ export function ConsolePage(): JSX.Element {
       const { trackId, offset } = trackSampleOffset;
       await client.cancelResponse(trackId, offset);
     }
-    await wavRecorder.record((data) => client.appendInputAudio(data.mono));
+    await wavRecorder.record((data: { mono: any }) => client.appendInputAudio(data.mono));
   };
 
   const stopRecording = async () => {
@@ -388,7 +383,7 @@ export function ConsolePage(): JSX.Element {
               iconPosition="end"
               buttonStyle="flush"
               label={`api key: ${apiKey.slice(0, 3)}...`}
-              onClick={() => resetAPIKey()}
+              onClick={resetAPIKey}
             />
           )}
         </div>
