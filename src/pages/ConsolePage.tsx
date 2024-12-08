@@ -8,6 +8,7 @@ import { X, Edit, Zap } from 'react-feather';
 import { Button } from '../components/button/Button';
 import './ConsolePage.scss';
 import { SimliClient } from 'simli-client';
+import simliLogo from '../assets/simli_small_logo.jpg';
 
 const USE_LOCAL_RELAY_SERVER_URL: string | undefined = undefined;
 
@@ -82,6 +83,7 @@ export function ConsolePage(): JSX.Element {
   const [realtimeEvents, setRealtimeEvents] = useState<RealtimeEvent[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
 
   const resetAPIKey = useCallback(() => {
     const apiKey = prompt('OpenAI API Key');
@@ -89,6 +91,31 @@ export function ConsolePage(): JSX.Element {
       localStorage.clear();
       localStorage.setItem('tmp::voice_api_key', apiKey);
       window.location.reload();
+    }
+  }, []);
+
+  const initializeAudioContext = useCallback(async () => {
+    try {
+      console.log('Initializing AudioContext...');
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) {
+        throw new Error('AudioContext not supported');
+      }
+      
+      const context = new AudioContextClass();
+      console.log('AudioContext created, state:', context.state);
+      
+      if (context.state === 'suspended') {
+        console.log('Attempting to resume AudioContext...');
+        await context.resume();
+        console.log('AudioContext resumed, new state:', context.state);
+      }
+      
+      setAudioContext(context);
+      return context;
+    } catch (error) {
+      console.error('Failed to initialize AudioContext:', error);
+      return null;
     }
   }, []);
 
@@ -102,8 +129,31 @@ export function ConsolePage(): JSX.Element {
   }, []);
   
   const connectConversation = useCallback(async () => {
+    console.log('Starting connection process...');
     const client = clientRef.current;
     const wavRecorder = wavRecorderRef.current;
+
+    // Initialize audio context if not already initialized
+    if (!audioContext) {
+      console.log('No AudioContext found, initializing...');
+      const context = await initializeAudioContext();
+      if (!context) {
+        console.error('Failed to initialize audio context');
+        return;
+      }
+    } else {
+      console.log('Existing AudioContext found, state:', audioContext.state);
+      if (audioContext.state === 'suspended') {
+        try {
+          console.log('Attempting to resume existing AudioContext...');
+          await audioContext.resume();
+          console.log('AudioContext resumed successfully');
+        } catch (error) {
+          console.error('Failed to resume AudioContext:', error);
+          return;
+        }
+      }
+    }
 
     startTimeRef.current = new Date().toISOString();
     setIsConnected(true);
@@ -111,20 +161,31 @@ export function ConsolePage(): JSX.Element {
     setItems(client.conversation.getItems());
   
     if (simliClientRef.current) {
+      console.log('Starting Simli client...');
       simliClientRef.current.start();
       const audioData = new Uint8Array(6000).fill(0);
       simliClientRef.current.sendAudioData(audioData);
       console.log('Sent initial empty audio data to Simli');
     }
   
+    console.log('Connecting to API...');
     await client.connect();
+    console.log('API connected');
+
+    console.log('Initializing audio recorder...');
     await wavRecorder.begin();
+    console.log('Audio recorder initialized');
+
+    console.log('Connecting stream player...');
     await wavStreamPlayerRef.current.connect();
+    console.log('Stream player connected');
     
     if (client.getTurnDetectionType() === 'server_vad') {
+      console.log('Starting recording with VAD...');
       await wavRecorder.record((data: { mono: any }) => client.appendInputAudio(data.mono));
+      console.log('Recording started');
     }
-  }, []);
+  }, [audioContext, initializeAudioContext]);
   
   const changeVoiceType = useCallback(async () => {
     const client = clientRef.current;
@@ -144,23 +205,39 @@ export function ConsolePage(): JSX.Element {
   }, [changeVoiceType]);
 
   const disconnectConversation = useCallback(async () => {
+    console.log('Starting disconnect process...');
     setIsConnected(false);
     setRealtimeEvents([]);
     setItems([]);
 
     const client = clientRef.current;
     client.disconnect();
+    console.log('API client disconnected');
 
     const wavRecorder = wavRecorderRef.current;
     await wavRecorder.end();
+    console.log('Audio recorder ended');
 
     const wavStreamPlayer = wavStreamPlayerRef.current;
     await wavStreamPlayer.interrupt();
+    console.log('Stream player interrupted');
 
     if (simliClientRef.current) {
       simliClientRef.current.close();
+      console.log('Simli client closed');
     }
-  }, []);
+
+    // Clean up audio context
+    if (audioContext) {
+      try {
+        await audioContext.close();
+        console.log('AudioContext closed');
+        setAudioContext(null);
+      } catch (error) {
+        console.error('Error closing AudioContext:', error);
+      }
+    }
+  }, [audioContext]);
 
   const deleteConversationItem = useCallback(async (id: string) => {
     const client = clientRef.current;
@@ -168,24 +245,42 @@ export function ConsolePage(): JSX.Element {
   }, []);
 
   const startRecording = async () => {
+    console.log('Starting recording process...');
+    if (!audioContext) {
+      console.log('No AudioContext found, initializing...');
+      await initializeAudioContext();
+    } else if (audioContext.state === 'suspended') {
+      console.log('AudioContext suspended, attempting to resume...');
+      await audioContext.resume();
+    }
+    
     setIsRecording(true);
     const client = clientRef.current;
     const wavRecorder = wavRecorderRef.current;
     const wavStreamPlayer = wavStreamPlayerRef.current;
+    
+    console.log('Interrupting stream player...');
     const trackSampleOffset = await wavStreamPlayer.interrupt();
     if (trackSampleOffset?.trackId) {
       const { trackId, offset } = trackSampleOffset;
+      console.log('Canceling response...');
       await client.cancelResponse(trackId, offset);
     }
+    
+    console.log('Starting audio recording...');
     await wavRecorder.record((data: { mono: any }) => client.appendInputAudio(data.mono));
+    console.log('Recording started');
   };
 
   const stopRecording = async () => {
+    console.log('Stopping recording...');
     setIsRecording(false);
     const client = clientRef.current;
     const wavRecorder = wavRecorderRef.current;
     await wavRecorder.pause();
+    console.log('Recording paused');
     client.createResponse();
+    console.log('Response created');
   };
 
   useEffect(() => {
@@ -276,6 +371,7 @@ export function ConsolePage(): JSX.Element {
   }, []);
 
   useEffect(() => {
+    console.log('Initializing main component...');
     const client = clientRef.current;
 
     if (videoRef.current && audioRef.current) {
@@ -285,6 +381,7 @@ export function ConsolePage(): JSX.Element {
       if (!simliApiKey || !simliFaceID) {
         console.error('Simli API key or Face ID is not defined');
       } else {
+        console.log('Initializing Simli client...');
         const SimliConfig = {
           apiKey: simliApiKey,
           faceID: simliFaceID,
@@ -315,22 +412,27 @@ export function ConsolePage(): JSX.Element {
       });
     });
 
-    client.on('error', (event: unknown) => console.error(event));
+    client.on('error', (event: unknown) => console.error('Client error:', event));
     
     client.on('conversation.interrupted', async () => {
+      console.log('Conversation interrupted, clearing audio buffer');
       simliAudioBufferRef.current = [];
     });
     
     client.on('conversation.updated', async ({ item, delta }: { item: ItemType; delta: { audio?: Int16Array } }) => {
+      console.log('Conversation updated');
       const items = client.conversation.getItems();
     
       if (delta?.audio) {
+        console.log('Processing audio delta');
         if (simliClientRef.current) {
           const audioData = new Int16Array(delta.audio);
           const resampledAudioData = resampleAudioData(audioData, 24000, 16000);
     
           if (isSimliDataChannelOpen()) {
+            console.log('Data channel open, sending audio');
             if (simliAudioBufferRef.current.length > 0) {
+              console.log('Sending buffered audio data');
               simliAudioBufferRef.current.forEach((bufferedData) => {
                 if (simliClientRef.current) {
                   simliClientRef.current.sendAudioData(bufferedData);
@@ -341,20 +443,58 @@ export function ConsolePage(): JSX.Element {
             const resampledAudioDataUint8 = new Uint8Array(resampledAudioData.buffer);
             simliClientRef.current.sendAudioData(resampledAudioDataUint8);
           } else {
+            console.log('Data channel not open, buffering audio');
             const resampledAudioDataUint8 = new Uint8Array(resampledAudioData.buffer);
             simliAudioBufferRef.current.push(resampledAudioDataUint8);
-            console.warn('Data channel is not open yet, buffering audio data');
           }
         }
       }
     
       if (item.status === 'completed' && item.formatted.audio?.length) {
-        const wavFile = await WavRecorder.decode(
-          item.formatted.audio,
-          24000,
-          24000
-        );
-        item.formatted.file = wavFile;
+        console.log('Processing completed audio item');
+        try {
+          console.log('Decoding audio...');
+          const wavFile = await WavRecorder.decode(
+            item.formatted.audio,
+            24000,
+            24000
+          );
+          item.formatted.file = wavFile;
+          console.log('Audio decoded successfully');
+
+          // Ensure audio context is initialized
+          if (!audioContext || audioContext.state === 'suspended') {
+            console.log('Initializing/resuming AudioContext for playback');
+            const ctx = audioContext || await initializeAudioContext();
+            if (ctx && ctx.state === 'suspended') {
+              await ctx.resume();
+            }
+          }
+
+          // Create and play audio element
+          console.log('Creating audio element for playback');
+          const audio = new Audio(wavFile.url);
+          audio.addEventListener('canplaythrough', () => {
+            console.log('Audio ready to play');
+            audio.play().catch(error => {
+              console.error('Error playing audio:', error);
+            });
+          });
+          
+          audio.addEventListener('play', () => {
+            console.log('Audio playback started');
+          });
+          
+          audio.addEventListener('ended', () => {
+            console.log('Audio playback completed');
+          });
+          
+          audio.addEventListener('error', (e) => {
+            console.error('Audio playback error:', e);
+          });
+        } catch (error) {
+          console.error('Error processing audio:', error);
+        }
       }
       setItems(items);
     });
@@ -362,12 +502,13 @@ export function ConsolePage(): JSX.Element {
     setItems(client.conversation.getItems());
 
     return () => {
+      console.log('Cleaning up component...');
       client.reset();
       if (simliClientRef.current) {
         simliClientRef.current.close();
       }
     };
-  }, [isSimliDataChannelOpen]);
+  }, [isSimliDataChannelOpen, audioContext, initializeAudioContext]);
 
   return (
     <div data-component="ConsolePage">
@@ -391,7 +532,7 @@ export function ConsolePage(): JSX.Element {
       <div className="content-main">
         <div className="content-center">
           <div className="content-avatar">
-            <img src="simli_small_logo.jpg" alt="Simli Logo" />
+            <img src={simliLogo} alt="Simli Logo" />
             <div className="content-block-title"></div>
             <div className="content-avatar-body">
               <video
@@ -401,7 +542,12 @@ export function ConsolePage(): JSX.Element {
                 muted
                 style={{ width: '100%', height: 'auto' }}
               />
-              <audio ref={audioRef} autoPlay/>
+              <audio 
+                ref={audioRef} 
+                autoPlay
+                onPlay={() => console.log('Audio element started playing')}
+                onError={(e) => console.error('Audio element error:', e)}
+              />
             </div>
           </div>
 
@@ -458,6 +604,13 @@ export function ConsolePage(): JSX.Element {
                         <audio
                           src={conversationItem.formatted.file.url}
                           controls
+                          onPlay={() => {
+                            console.log('Audio controls: playback started');
+                            if (!audioContext || audioContext.state === 'suspended') {
+                              initializeAudioContext();
+                            }
+                          }}
+                          onError={(e) => console.error('Audio controls error:', e)}
                         />
                       )}
                     </div>
