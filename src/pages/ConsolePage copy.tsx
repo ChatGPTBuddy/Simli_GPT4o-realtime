@@ -553,13 +553,12 @@ export function ConsolePage() {
                 {!items.length && "...let's get connected!"}
               </div>
               {items.map((conversationItem, i) => {
+                const displayText = conversationItem.role || conversationItem.type || '';
                 return (
                   <div className="conversation-item" key={conversationItem.id}>
                     <div className={`speaker ${conversationItem.role || ''}`}>
                       <div>
-                        {(
-                          conversationItem.role || conversationItem.type
-                        ).replaceAll('_', ' ')}
+                        {displayText.replaceAll('_', ' ')}
                       </div>
                       <div
                         className="close"

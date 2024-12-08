@@ -45,7 +45,11 @@ export class WavRecorder {
     this.eventReceipts = {};
     this.eventTimeout = 5000;
     // Process chunks of audio
-    this._chunkProcessor = () => {};
+    this._chunkProcessor = (audioData) => {
+      if (this.debug) {
+        console.log('Default chunk processor called', audioData);
+      }
+    };
     this._chunkProcessorSize = void 0;
     this._chunkProcessorBuffer = {
       raw: new ArrayBuffer(0),
@@ -136,7 +140,7 @@ export class WavRecorder {
    */
   log() {
     if (this.debug) {
-      this.log(...arguments);
+      console.log(...arguments);
     }
     return true;
   }
@@ -431,7 +435,11 @@ export class WavRecorder {
    * @param {number} [chunkSize] chunkProcessor will not be triggered until this size threshold met in mono audio
    * @returns {Promise<true>}
    */
-  async record(chunkProcessor = () => {}, chunkSize = 8192) {
+  async record(chunkProcessor = (audioData) => {
+    if (this.debug) {
+      console.log('Default chunk processor called', audioData);
+    }
+  }, chunkSize = 8192) {
     if (!this.processor) {
       throw new Error('Session ended: please call .begin() first');
     } else if (this.recording) {

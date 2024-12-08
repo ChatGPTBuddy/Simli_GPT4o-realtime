@@ -8,8 +8,8 @@ const dataMap = new WeakMap();
 const normalizeArray = (
   data: Float32Array,
   m: number,
-  downsamplePeaks: boolean = false,
-  memoize: boolean = false
+  downsamplePeaks = false,
+  memoize = false
 ) => {
   let cache, mKey, dKey;
   if (memoize) {
@@ -79,10 +79,10 @@ export const WavRenderer = {
     ctx: CanvasRenderingContext2D,
     data: Float32Array,
     color: string,
-    pointCount: number = 0,
-    barWidth: number = 0,
-    barSpacing: number = 0,
-    center: boolean = false
+    pointCount = 0,
+    barWidth = 0,
+    barSpacing = 0,
+    center = false
   ) => {
     pointCount = Math.floor(
       Math.min(
